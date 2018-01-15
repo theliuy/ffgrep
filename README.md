@@ -1,3 +1,6 @@
+## Usage
+
+```bash
 ffgrep - parallel file pattern searcher
 
   -c int
@@ -15,3 +18,4 @@ Example:
 
   # search regular expression pattern
   ffgrep -e 'hello[ab]+world' access.log
+```

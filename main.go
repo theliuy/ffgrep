@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type Options struct {
@@ -106,15 +107,33 @@ func search(ctx context.Context, opt *Options, stream *Stream, out IOutput) erro
 	return nil
 }
 
-func printStatus(stream *Stream) {
+func printStatus(stream *Stream, startTime int64) {
 	total := stream.FileSize()
 	read := stream.ReadSize()
 	qLen := stream.QLen()
+
+	timeLast := time.Now().UnixNano() - startTime
+	var timeRemaining int64 = -1
+	if total > 0 && read > 0 {
+		timeRemaining = int64(float64(timeLast) * float64(total-read) / float64(read))
+	}
+
 	fmt.Printf(
-		"progress=%.2f (%d / %d)  QLength=%d\n",
+		"progress=%.2f (%d / %d)  QLength=%d last=%v remain=%v\n",
 		float64(read)/float64(total),
 		read, total, qLen,
+		formatDurationSecond(timeLast),
+		formatDurationSecond(timeRemaining),
 	)
+}
+
+func formatDurationSecond(ds int64) string {
+	if ds < 0 {
+		return "N/A"
+	}
+
+	d := time.Duration(ds)
+	return d.String()
 }
 
 func main() {
@@ -123,7 +142,6 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	out := NewStdOutput(opt.numMatcher * BUFFER_MUTIFIER)
 
@@ -133,19 +151,19 @@ func main() {
 		os.Exit(2)
 	}
 
-	err = search(ctx, opt, stream, out)
-	if err != nil {
-		os.Exit(2)
-	}
+	startTime := time.Now().UnixNano()
+	go search(ctx, opt, stream, out)
+	//	if err != nil {
+	//		os.Exit(2)
+	//	}
 
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGINFO)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, infoSig)
 	for {
 		select {
 		case sig := <-sigs:
-			if sig == syscall.SIGINFO {
-				printStatus(stream)
-				break
+			if sig == infoSig {
+				printStatus(stream, startTime)
 			} else {
 				cancel()
 			}

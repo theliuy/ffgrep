@@ -10,8 +10,10 @@ import (
 	"sync/atomic"
 )
 
+type StreamQueue chan []byte
+
 type Stream struct {
-	q         chan []byte
+	qList     []StreamQueue
 	fileSize  int64
 	readSize  int64
 	numWorker int
@@ -39,8 +41,13 @@ func NewStream(ctx context.Context, filename string, numWorker, bufferSize int) 
 		return nil, err
 	}
 
+	qList := make([]StreamQueue, numWorker)
+	for i := 0; i < numWorker; i++ {
+		qList[i] = make(StreamQueue, bufferSize)
+	}
+
 	stream := &Stream{
-		q:         make(chan []byte, bufferSize),
+		qList:     qList,
 		fileSize:  stats.Size(),
 		readSize:  0,
 		numWorker: numWorker,
@@ -62,7 +69,8 @@ func (s *Stream) kickoff(ctx context.Context) error {
 
 	for readerId := 0; readerId < s.numWorker; readerId++ {
 		if offset > s.fileSize {
-			break
+			close(s.qList[readerId])
+			continue
 		}
 
 		fh, err := os.Open(s.filename)
@@ -85,8 +93,6 @@ func (s *Stream) kickoff(ctx context.Context) error {
 		offset += step
 	}
 	wg.Wait()
-	// fmt.Printf("close q\n")
-	close(s.q)
 
 	return nil
 }
@@ -99,18 +105,24 @@ func (s *Stream) ReadSize() int64 {
 	return atomic.LoadInt64(&s.readSize)
 }
 
-func (s *Stream) QLen() int {
-	return len(s.q)
+func (s *Stream) QNum() int {
+	return s.numWorker
 }
 
-func (s *Stream) Next() <-chan []byte {
-	return s.q
+func (s *Stream) QLen(id int) int {
+	return len(s.qList[id])
+}
+
+func (s *Stream) Next(id int) <-chan []byte {
+	return s.qList[id]
 }
 
 func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh *os.File, numToEnd int64) {
 	// fmt.Printf("[reader %d] starts\n", id)
 	// defer fmt.Printf("[reader %d] ends\n", id)
+
 	defer wg.Done()
+	defer close(s.qList[id])
 	defer fh.Close()
 
 	reader := bufio.NewReader(fh)
@@ -143,7 +155,7 @@ func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh
 			}
 			atomic.AddInt64(&s.readSize, lenBs)
 
-			s.q <- bs
+			s.qList[id] <- bs
 
 			if numRead > numToEnd || err == io.EOF {
 				return

@@ -91,8 +91,10 @@ func testValidateStream(t *testing.T, stream *ffgrep.Stream, lines []string) {
 	var streamLines []string
 
 	// read all lines via stream
-	for line := range stream.Next() {
-		streamLines = append(streamLines, string(line))
+	for i := 0; i < stream.QNum(); i++ {
+		for line := range stream.Next(i) {
+			streamLines = append(streamLines, string(line))
+		}
 	}
 
 	if len(lines) != len(streamLines) {

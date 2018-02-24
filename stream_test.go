@@ -15,7 +15,7 @@ import (
 
 func TestStream(t *testing.T) {
 	testFile := testFile()
-	t.Log("test: %s\n", testFile)
+	t.Logf("test: %s", testFile)
 
 	// read test file in a rough way
 	lines, err := testReadAll(testFile)

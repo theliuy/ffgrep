@@ -154,6 +154,8 @@ func main() {
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	out := NewStdOutput(opt.numMatcher * BUFFER_MUTIFIER)
 
 	if opt.pprofFile != "" {
@@ -174,9 +176,6 @@ func main() {
 
 	startTime := time.Now().UnixNano()
 	go search(ctx, opt, stream, out)
-	//	if err != nil {
-	//		os.Exit(2)
-	//	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
@@ -186,7 +185,7 @@ func main() {
 			if sig == syscall.SIGUSR1 {
 				printStatus(stream, startTime)
 			} else {
-				cancel()
+				return
 			}
 		case <-out.Done():
 			return

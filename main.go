@@ -154,7 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// defer cancel()
 
 	out := NewStdOutput(opt.numMatcher * BUFFER_MUTIFIER)
 
@@ -185,6 +185,7 @@ func main() {
 			if sig == syscall.SIGUSR1 {
 				printStatus(stream, startTime)
 			} else {
+				cancel()
 				return
 			}
 		case <-out.Done():

@@ -37,8 +37,9 @@ func (o *StdOutput) Start() {
 		if msg == nil {
 			continue
 		}
-		o.writer.WriteString(string(msg) + "\n")
-		o.writer.Flush()
+		_, _ = o.writer.Write(msg)
+		_, _ = o.writer.WriteString("\n")
+		_ = o.writer.Flush()
 	}
 }
 

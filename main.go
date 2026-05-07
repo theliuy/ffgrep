@@ -46,7 +46,7 @@ func parseOption() (*Options, error) {
 
 	flag.IntVar(&opt.numReader, "r", 1, "Run up to r readers to read the file.")
 	flag.IntVar(&opt.numMatcher, "m", 4, "Run m jobs per reader to consume lines of the file.")
-	flag.IntVar(&opt.numCpu, "c", runtime.NumCPU(), "Set the maxiumn number of CPU when executing.")
+	flag.IntVar(&opt.numCpu, "c", runtime.NumCPU(), "Set the maximum number of CPU when executing.")
 	flag.StringVar(&opt.pattern, "e", "", "Match each line by the given regular expression pattern.")
 	flag.StringVar(&opt.pprofFile, "p", "", "Enable pprof by setting output file.")
 
@@ -77,7 +77,7 @@ func parseOption() (*Options, error) {
 		fmt.Println(INTRODUCTION)
 		flag.PrintDefaults()
 		fmt.Println(EXAMPLE)
-		return nil, errors.New("pasring option failed")
+		return nil, errors.New("parsing option failed")
 	}
 
 	return opt, nil
@@ -154,7 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	// defer cancel()
+	defer cancel()
 
 	out := NewStdOutput(opt.numMatcher * BUFFER_MUTIFIER)
 

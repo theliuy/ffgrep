@@ -68,7 +68,7 @@ func (s *Stream) kickoff(ctx context.Context) error {
 	wg := new(sync.WaitGroup)
 
 	for readerId := 0; readerId < s.numWorker; readerId++ {
-		if offset > s.fileSize {
+		if offset >= s.fileSize {
 			close(s.qList[readerId])
 			continue
 		}
@@ -78,17 +78,31 @@ func (s *Stream) kickoff(ctx context.Context) error {
 			return err
 		}
 
+		var startPos int64 = offset
 		if offset > 0 {
 			_, err = fh.Seek(offset-1, 0)
 			if err != nil {
 				return err
 			}
 			adjustOffset := adjustStart(fh)
-			offset += adjustOffset
+			startPos = offset + adjustOffset
+		}
+
+		var endOffset int64
+		if readerId == s.numWorker-1 {
+			endOffset = s.fileSize
+		} else {
+			endOffset = offset + step
+		}
+
+		// 重新 seek 到正确的起始位置
+		_, err = fh.Seek(startPos, 0)
+		if err != nil {
+			return err
 		}
 
 		wg.Add(1)
-		go s.startReader(ctx, wg, readerId, fh, step)
+		go s.startReader(ctx, wg, readerId, fh, startPos, endOffset)
 
 		offset += step
 	}
@@ -117,7 +131,7 @@ func (s *Stream) Next(id int) <-chan []byte {
 	return s.qList[id]
 }
 
-func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh *os.File, numToEnd int64) {
+func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh *os.File, startOffset, endOffset int64) {
 	// fmt.Printf("[reader %d] starts\n", id)
 	// defer fmt.Printf("[reader %d] ends\n", id)
 
@@ -126,45 +140,57 @@ func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh
 	defer fh.Close()
 
 	reader := bufio.NewReader(fh)
-	var numRead int64 = 0
+	var currentOffset int64 = startOffset
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 			bs, err := reader.ReadBytes(LINE_ENDING)
-			numRead += int64(len(bs))
+			bytesRead := int64(len(bs))
 
 			// including io.EOF
 			if err != nil && err != io.EOF {
 				return
 			}
 
+			line := bs
+			hasNewline := len(line) > 0 && line[len(line)-1] == LINE_ENDING
+
 			// remove line ending
 			// fix it, when goes to windows
-			if len(bs) > 0 && bs[len(bs)-1] == LINE_ENDING {
-				bs = bs[:len(bs)-1]
+			if hasNewline {
+				line = line[:len(line)-1]
 			}
 
-			lenBs := int64(len(bs))
-			if lenBs == 0 {
+			// 即使是空行，也要更新偏移量
+			currentOffset += bytesRead
+
+			if len(line) == 0 {
 				if err == io.EOF {
 					return
 				}
 				continue
 			}
-			atomic.AddInt64(&s.readSize, lenBs)
 
-			s.qList[id] <- bs
+			atomic.AddInt64(&s.readSize, int64(len(line)))
+			s.qList[id] <- line
 
-			if numRead > numToEnd || err == io.EOF {
+			// 检查是否超过 endOffset，注意是比较 currentOffset
+			// 只有非最后一个reader才检查
+			if endOffset < s.fileSize && currentOffset > endOffset {
+				return
+			}
+
+			if err == io.EOF {
 				return
 			}
 		}
 	}
 }
 
-// adjust filehandler's start to the rigth position, and returns offset
+// adjust filehandler's start to the right position, and returns offset from original position
 func adjustStart(fh *os.File) int64 {
 	buf := make([]byte, 1)
 	_, err := fh.Read(buf)
@@ -173,19 +199,19 @@ func adjustStart(fh *os.File) int64 {
 		return 0
 	}
 
-	// starts from new line
+	// starts from new line - next character is start of new line
 	if string(buf) == "\n" {
-		return 0
+		return 1
 	}
 
 	// Read until next line
-	var offset int64 = 0
+	var offset int64 = 1 // already read 1 byte
 	for {
 		_, err = fh.Read(buf)
-		offset += 1
 		if err == io.EOF {
 			break
 		}
+		offset += 1
 
 		if string(buf) == "\n" {
 			break

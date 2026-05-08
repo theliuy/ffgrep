@@ -21,8 +21,7 @@ type Stream struct {
 }
 
 const (
-	STREAM_DEFAULT_SEEK_STEP int = 64
-	LINE_ENDING                  = '\n'
+	LINE_ENDING = '\n'
 )
 
 func NewStream(ctx context.Context, filename string, numWorker, bufferSize int) (*Stream, error) {

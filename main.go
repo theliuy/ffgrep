@@ -74,9 +74,9 @@ func parseOption() (*Options, error) {
 
 	if errMesage != "" {
 		fmt.Println(errMesage)
-		fmt.Println(INTRODUCTION)
+		fmt.Print(INTRODUCTION)
 		flag.PrintDefaults()
-		fmt.Println(EXAMPLE)
+		fmt.Print(EXAMPLE)
 		return nil, errors.New("parsing option failed")
 	}
 

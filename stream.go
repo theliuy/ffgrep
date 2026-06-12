@@ -59,14 +59,21 @@ func NewStream(ctx context.Context, filename string, numWorker, bufferSize int) 
 
 func (s *Stream) kickoff(ctx context.Context) error {
 	var offset int64 = 0
-	var step int64 = s.fileSize / int64(s.numWorker)
+	step := s.fileSize / int64(s.numWorker)
 	if step <= 0 {
 		step = s.fileSize
 	}
 
+	// For small files, limit the number of workers to avoid creating
+	// workers that will immediately skip due to offset >= fileSize
+	numActiveReaders := s.numWorker
+	if s.fileSize > 0 && s.fileSize < int64(s.numWorker) {
+		numActiveReaders = int(s.fileSize)
+	}
+
 	wg := new(sync.WaitGroup)
 
-	for readerId := 0; readerId < s.numWorker; readerId++ {
+	for readerId := 0; readerId < numActiveReaders; readerId++ {
 		if offset >= s.fileSize {
 			close(s.qList[readerId])
 			continue
@@ -105,6 +112,12 @@ func (s *Stream) kickoff(ctx context.Context) error {
 
 		offset += step
 	}
+
+	// Close unused queues for workers that were never activated
+	for readerId := numActiveReaders; readerId < s.numWorker; readerId++ {
+		close(s.qList[readerId])
+	}
+
 	wg.Wait()
 
 	return nil
@@ -149,11 +162,6 @@ func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh
 			bs, err := reader.ReadBytes(LINE_ENDING)
 			bytesRead := int64(len(bs))
 
-			// including io.EOF
-			if err != nil && err != io.EOF {
-				return
-			}
-
 			line := bs
 			hasNewline := len(line) > 0 && line[len(line)-1] == LINE_ENDING
 
@@ -166,6 +174,15 @@ func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh
 			// 即使是空行，也要更新偏移量
 			currentOffset += bytesRead
 
+			// Handle error: if we have data, process it before returning
+			if err != nil && err != io.EOF {
+				if len(line) > 0 {
+					atomic.AddInt64(&s.readSize, bytesRead)
+					s.qList[id] <- line
+				}
+				return
+			}
+
 			if len(line) == 0 {
 				if err == io.EOF {
 					return
@@ -173,7 +190,7 @@ func (s *Stream) startReader(ctx context.Context, wg *sync.WaitGroup, id int, fh
 				continue
 			}
 
-			atomic.AddInt64(&s.readSize, int64(len(line)))
+			atomic.AddInt64(&s.readSize, bytesRead)
 			s.qList[id] <- line
 
 			// 检查是否超过 endOffset，注意是比较 currentOffset

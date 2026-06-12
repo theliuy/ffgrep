@@ -7,6 +7,8 @@ package main
 import (
 	"bufio"
 	"os"
+	"sync"
+	"sync/atomic"
 )
 
 type IOutput interface {
@@ -16,9 +18,11 @@ type IOutput interface {
 }
 
 type StdOutput struct {
-	msgQ   chan []byte
-	done   chan struct{}
-	writer *bufio.Writer
+	msgQ      chan []byte
+	done      chan struct{}
+	writer    *bufio.Writer
+	dropCount int64
+	mu        sync.Mutex
 }
 
 func NewStdOutput(bufSize int) *StdOutput {
@@ -44,7 +48,12 @@ func (o *StdOutput) Start() {
 }
 
 func (o *StdOutput) Writeln(msg []byte) {
-	o.msgQ <- msg
+	select {
+	case o.msgQ <- msg:
+	default:
+		// Buffer full, increment drop count
+		atomic.AddInt64(&o.dropCount, 1)
+	}
 }
 
 func (o *StdOutput) Close() {

@@ -61,19 +61,19 @@ func parseOption() (*Options, error) {
 		opt.file = flag.Arg(0)
 	}
 
-	errMesage := ""
+	errMessage := ""
 	if opt.pattern == "" {
-		errMesage = "Pattern must not be empty"
+		errMessage = "Pattern must not be empty"
 	} else if opt.file == "" {
-		errMesage = "Filename must not be empty"
+		errMessage = "Filename must not be empty"
 	} else if opt.numReader <= 0 {
-		errMesage = "The number of readers (-r) must be positive"
+		errMessage = "The number of readers (-r) must be positive"
 	} else if opt.numCpu <= 0 {
-		errMesage = "The number of CPU (-c) must be positive"
+		errMessage = "The number of CPU (-c) must be positive"
 	}
 
-	if errMesage != "" {
-		fmt.Println(errMesage)
+	if errMessage != "" {
+		fmt.Println(errMessage)
 		fmt.Print(INTRODUCTION)
 		flag.PrintDefaults()
 		fmt.Print(EXAMPLE)
@@ -161,9 +161,10 @@ func main() {
 	if opt.pprofFile != "" {
 		pprofFile, err := os.Create(opt.pprofFile)
 		if err != nil {
+			fmt.Printf("error: failed to create pprof file: %s\n", err.Error())
 			os.Exit(1)
 		}
-
+		defer pprofFile.Close()
 		pprof.StartCPUProfile(pprofFile)
 		defer pprof.StopCPUProfile()
 	}
@@ -186,6 +187,7 @@ func main() {
 				printStatus(stream, startTime)
 			} else {
 				cancel()
+				<-out.Done()
 				return
 			}
 		case <-out.Done():
